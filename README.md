@@ -47,7 +47,7 @@ The simulator models a virtual river ecosystem where industrial, agricultural, a
 
 1. Clone the repository:
    ```bash
-   git clone [<repository-url>](https://github.com/saitejareddy05/simverse)
+   git clone https://github.com/saitejareddy05/simverse
    cd simverse
    ```
 
