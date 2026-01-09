@@ -22,32 +22,74 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CSS for Aesthetics ---
+# --- CSS for System Themes ---
 st.markdown("""
     <style>
-    .main {
-        background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-        color: white;
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
+    
+    :root {
+        --bg: #ffffff;
+        --text: #1f2937;
+        --card: rgba(255, 255, 255, 0.9);
+        --border: rgba(0, 0, 0, 0.1);
+        --sidebar: rgba(240, 242, 246, 0.8);
+        --accent: #0078d4;
+        --indicator: #666; /* Neutral for gauges */
     }
-    .stApp {
-        background-color: transparent;
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg: #000000;
+            --text: #ffffff;
+            --card: rgba(20, 20, 20, 0.8);
+            --border: rgba(255, 255, 255, 0.1);
+            --sidebar: rgba(15, 15, 15, 0.8);
+            --accent: #00d4ff;
+            --indicator: #aaa;
+        }
     }
+
+    html, body, [data-testid="stAppViewContainer"], .stApp {
+        font-family: 'Outfit', sans-serif;
+        background: var(--bg) !important;
+        color: var(--text) !important;
+    }
+
     [data-testid="stSidebar"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
-        border-right: 1px solid rgba(255, 255, 255, 0.1);
+        background-color: var(--sidebar) !important;
+        backdrop-filter: blur(25px);
+        border-right: 1px solid var(--border);
     }
+
     .metric-card {
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--card);
         padding: 1.5rem;
-        border-radius: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        border: 1px solid var(--border);
         text-align: center;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
-    .status-healthy { color: #00ff88; }
-    .status-stressed { color: #ffbb00; }
-    .status-critical { color: #ff4444; }
+    
+    .metric-card:hover {
+        transform: translateY(-8px) scale(1.02);
+        border: 1px solid var(--accent);
+    }
+
+    .status-healthy { color: var(--accent); }
+    .status-stressed { color: #ffab00; }
+    .status-critical { color: #ff4b2b; }
+
+    .stMarkdown, p, h1, h2, h3, h4, span, label, .stMetric {
+        color: var(--text) !important;
+    }
+    
+    h1 {
+        background: linear-gradient(90deg, var(--accent), #00ff88);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -155,7 +197,30 @@ def update_simulation(pollution_inputs, policies):
     
     # 6. Random Weather Event
     st.session_state.last_weather = trigger_weather()
+    log_event(f"Day {st.session_state.day} summary: {st.session_state.ecosystem_state} ecosystem.")
+    if st.session_state.params["score"] > 95:
+        log_event("🌟 Ecosystem is thriving!", "success")
+    
     st.session_state.day += 1
+
+# --- Weather Logic ---
+def trigger_weather():
+    events = ["Sunny", "Heavy Rain", "Drought", "Flash Flood"]
+    event = random.choices(events, weights=[0.7, 0.1, 0.1, 0.1])[0]
+    
+    if event == "Heavy Rain":
+        st.session_state.params["nitrates"] += 2.0 # Runoff
+        log_event("🌧️ Heavy Rain washing nutrients into the river!")
+    elif event == "Drought":
+        st.session_state.params["toxins"] *= 1.2 # Concentration increase
+        st.session_state.params["do"] -= 1.0
+        log_event("☀️ Drought detected: Toxic concentrations rising!")
+    elif event == "Flash Flood":
+        st.session_state.params["do"] += 1.0 # Aeration but waste wash-in
+        st.session_state.params["toxins"] += 1.0
+        log_event("🌊 Flash Flood! Debris levels skyrocketed.")
+    
+    return event
 
 # --- Badge System ---
 def render_badges():
@@ -197,41 +262,93 @@ def render_sidebar():
 
     return {"factory": factory, "farm": farm, "urban": urban}, {"treatment": treatment, "organic": organic, "regulation": regulation, "cleanup": cleanup}
 
+# --- Event Logger ---
+def log_event(message, type="info"):
+    if 'event_log' not in st.session_state:
+        st.session_state.event_log = []
+    timestamp = time.strftime("%H:%M:%S")
+    st.session_state.event_log.insert(0, f"[{timestamp}] {message}")
+    if len(st.session_state.event_log) > 10:
+        st.session_state.event_log.pop()
+
 def render_dashboard():
     # Show Eco-Points in a special header
-    st.markdown(f"### 🎖️ Eco-Points: {st.session_state.params['eco_points']} | Day {st.session_state.day}")
+    col_pts, col_news = st.columns([1, 2])
+    with col_pts:
+        st.markdown(f"""
+        <div class='metric-card' style='padding: 1rem;'>
+            <h4 style='margin:0'>🎖️ Eco-Points</h4>
+            <h2 style='margin:0; color:#00ffa3'>{st.session_state.params['eco_points']}</h2>
+        </div>
+        """, unsafe_allow_html=True)
     
-    col1, col2, col3, col4 = st.columns(4)
+    with col_news:
+        if 'event_log' in st.session_state and st.session_state.event_log:
+            latest = st.session_state.event_log[0]
+            st.markdown(f"""
+            <div class='metric-card' style='padding: 1rem; text-align: left; overflow: hidden; white-space: nowrap;'>
+                <h4 style='margin:0; font-size: 0.9rem; opacity: 0.7;'>📡 Latest Update</h4>
+                <div style='color: #fff; font-size: 1rem;'>{latest}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    with col1:
-        st.markdown(f"""<div class='metric-card'>
-            <h4>Dissolved Oxygen</h4>
-            <h2 class='{ "status-healthy" if st.session_state.params["do"] > 5 else "status-stressed" if st.session_state.params["do"] > 2.5 else "status-critical" }'>
-                {st.session_state.params["do"]:.2f} mg/L
-            </h2>
-        </div>""", unsafe_allow_html=True)
-        
-    with col2:
-        st.markdown(f"""<div class='metric-card'>
-            <h4>Turbidity</h4>
-            <h2 class='{ "status-healthy" if st.session_state.params["turbidity"] < 15 else "status-stressed" if st.session_state.params["turbidity"] < 40 else "status-critical" }'>
-                {st.session_state.params["turbidity"]:.1f} NTU
-            </h2>
-        </div>""", unsafe_allow_html=True)
-        
-    with col3:
-        st.markdown(f"""<div class='metric-card'>
-            <h4>Ecosystem Health</h4>
-            <h2 class='{ "status-healthy" if st.session_state.ecosystem_state == "Healthy" else "status-stressed" if st.session_state.ecosystem_state == "Stressed" else "status-critical" }'>
-                {st.session_state.ecosystem_state}
-            </h2>
-        </div>""", unsafe_allow_html=True)
-        
-    with col4:
-        st.markdown(f"""<div class='metric-card'>
-            <h4>Sustainability Score</h4>
-            <h2>{st.session_state.params["score"]:.0f}%</h2>
-        </div>""", unsafe_allow_html=True)
+    # Premium Gauges for Primary Metrics
+    g1, g2, g3 = st.columns(3)
+    
+    with g1:
+        fig_do = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = st.session_state.params["do"],
+            title = {'text': "Dissolved Oxygen (mg/L)", 'font': {'size': 18}},
+            gauge = {
+                'axis': {'range': [0, 12], 'tickwidth': 1},
+                'bar': {'color': "#00d4ff"},
+                'bgcolor': "rgba(255,255,255,0.03)",
+                'steps': [
+                    {'range': [0, 2.5], 'color': "rgba(255, 75, 43, 0.15)"},
+                    {'range': [2.5, 5], 'color': "rgba(255, 171, 0, 0.15)"}],
+                'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': 5}
+            }
+        ))
+        fig_do.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#888", 'family': "Outfit"}, height=280, margin=dict(l=30, r=30, t=50, b=20))
+        st.plotly_chart(fig_do, use_container_width=True)
+
+    with g2:
+        fig_score = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = st.session_state.params["score"],
+            number = {'suffix': "%"},
+            title = {'text': "Sustainability Score", 'font': {'size': 18}},
+            gauge = {
+                'axis': {'range': [0, 100], 'tickwidth': 1},
+                'bar': {'color': "#00ff88"},
+                'bgcolor': "rgba(255,255,255,0.03)",
+                'steps': [
+                    {'range': [0, 40], 'color': "rgba(255, 75, 43, 0.1)"},
+                    {'range': [40, 70], 'color': "rgba(255, 171, 0, 0.1)"}],
+            }
+        ))
+        fig_score.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#888", 'family': "Outfit"}, height=280, margin=dict(l=30, r=30, t=50, b=20))
+        st.plotly_chart(fig_score, use_container_width=True)
+
+    with g3:
+        fig_turb = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = st.session_state.params["turbidity"],
+            title = {'text': "Turbidity (NTU)", 'font': {'size': 18}},
+            gauge = {
+                'axis': {'range': [0, 100], 'tickwidth': 1},
+                'bar': {'color': "#8b5e3c"},
+                'bgcolor': "rgba(255,255,255,0.03)",
+                'steps': [
+                    {'range': [30, 60], 'color': "rgba(255, 171, 0, 0.05)"},
+                    {'range': [60, 100], 'color': "rgba(255, 75, 43, 0.05)"}],
+            }
+        ))
+        fig_turb.update_layout(paper_bgcolor='rgba(0,0,0,0)', font={'color': "#888", 'family': "Outfit"}, height=280, margin=dict(l=30, r=30, t=50, b=20))
+        st.plotly_chart(fig_turb, use_container_width=True)
 
     st.markdown("---")
     
@@ -255,7 +372,7 @@ def render_dashboard():
             fig.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='white'),
+                font=dict(color='#888'),
                 xaxis_title="Day",
                 yaxis_title="Levels"
             )
@@ -276,7 +393,7 @@ def render_dashboard():
                 go.Bar(name='Initial State (Day 0)', x=comp_data["Parameter"], y=comp_data["Initial"], marker_color='#00b0ff'),
                 go.Bar(name='Current State', x=comp_data["Parameter"], y=comp_data["Current"], marker_color='#ffbb00')
             ])
-            fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='white'))
+            fig_comp.update_layout(barmode='group', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color='#888'))
             st.plotly_chart(fig_comp, use_container_width=True)
         else:
             st.info("Simulation history needed for comparison. Advance at least 1 day.")
@@ -315,25 +432,6 @@ def render_river():
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-# --- Weather Logic ---
-def trigger_weather():
-    events = ["Sunny", "Heavy Rain", "Drought", "Flash Flood"]
-    event = random.choices(events, weights=[0.7, 0.1, 0.1, 0.1])[0]
-    
-    if event == "Heavy Rain":
-        st.session_state.params["nitrates"] += 2.0 # Runoff
-        st.info("🌧️ Heavy Rain Alert: Nutrient runoff has increased!")
-    elif event == "Drought":
-        st.session_state.params["toxins"] *= 1.2 # Concentration increase
-        st.session_state.params["do"] -= 1.0
-        st.warning("☀️ Drought Alert: Water levels low, pollutants concentrating!")
-    elif event == "Flash Flood":
-        st.session_state.params["do"] += 1.0 # Aeration but waste wash-in
-        st.session_state.params["toxins"] += 1.0
-        st.error("🌊 Flash Flood! Waste tanks overflowed, but water is aerated.")
-    
-    return event
 
 # --- Updated Main App ---
 def main():
